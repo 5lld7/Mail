@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>بريد | إدارة السيرفر</title>
+  <link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header><div class="brand"><span class="logo">✉</span><div>بريد<small>لوحة إدارة السيرفر</small></div></div><button id="logout" hidden>تسجيل الخروج</button></header>
+  <main>
+    <div id="notice" role="status" hidden></div>
+    <section id="login" class="card login" hidden>
+      <span class="eyebrow">أهلًا بيك</span><h1>سيرفرك، تحت إيدك.</h1><p>إدارة البريد والمساحة من مكان واحد.</p>
+      <form id="login-form"><label>كلمة مرور البانل<input id="admin-password" type="password" autocomplete="current-password" required></label><button class="primary">دخول للوحة التحكم ←</button></form>
+    </section>
+    <div id="dashboard" hidden>
+      <div class="intro"><div><span class="eyebrow">نظرة عامة</span><h1>كل حاجة في مكانها.</h1><p>حسابات البريد ومساحة السيرفر، ببساطة.</p></div><span id="mode" class="badge"></span></div>
+      <div class="metrics">
+        <section class="card metric"><span>المساحة المستخدمة</span><strong id="disk-used">—</strong><div class="meter"><i id="disk-bar"></i></div><small id="disk-total"></small></section>
+        <section class="card metric"><span>المساحة المتاحة</span><strong id="disk-free">—</strong><small>على قرص النظام</small></section>
+        <section class="card metric"><span>حسابات البريد</span><strong id="email-count">—</strong><small>على الدومين المحدد</small></section>
+      </div>
+      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="cleanup-tab">◈ تنظيف المساحة</button></nav>
+      <section id="mail-section" class="card">
+        <div class="section-head"><div><h2>حسابات البريد</h2><p>أنشئ حساب جديد أو احذف حساب لم تعد تحتاجه.</p></div><label>الدومين<select id="domain"></select></label></div>
+        <form id="create-form" class="create-grid"><label>اسم الحساب<input id="email-user" placeholder="support" dir="ltr" maxlength="64" required pattern="[a-z0-9][a-z0-9._+\-]{0,63}" autocomplete="off"></label><label>كلمة مرور البريد<input id="email-password" type="password" minlength="12" maxlength="128" placeholder="12 حرف على الأقل" autocomplete="new-password" required></label><button class="primary">+ إنشاء حساب</button></form>
+        <div id="email-list" aria-live="polite"></div><button id="refresh">تحديث القائمة</button>
+      </section>
+      <section id="cleanup-section" class="card" hidden>
+        <h2>مساحة أكتر، بخطوات واضحة.</h2><p>المعاينة تعرض ملفات مؤرشفة أو كاش أقدم من 14 يومًا. الملفات النشطة والمواقع ورسائل البريد خارج نطاق التنظيف.</p>
+        <div class="cleanup-controls"><label>نوع الملفات<select id="category"></select></label><button id="preview" class="primary">معاينة الملفات</button></div>
+        <p class="muted">تُفحص الملفات مباشرة داخل المجلد فقط، بحد أقصى 1000 ملف لكل معاينة. قد تختلف المساحة الفعلية المتاحة بعد الحذف إذا كانت الملفات مفتوحة بواسطة خدمة.</p>
+        <div id="preview-result" hidden><h3 id="preview-summary"></h3><ul id="preview-files" class="file-list"></ul><button id="execute" class="danger">حذف الملفات المعروضة</button></div>
+      </section>
+    </div>
+    <footer>بريد · إدارة خفيفة، ومساحة للحاجات المهمة.</footer>
+  </main>
+  <dialog id="confirm-dialog"><form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-description"></p><label id="confirm-label">تأكيد<input id="confirm-input" autocomplete="off" required></label><div class="dialog-actions"><button value="cancel" formnovalidate>إلغاء</button><button id="confirm-submit" class="danger" value="confirm">تأكيد الحذف</button></div></form></dialog>
+</body></html>

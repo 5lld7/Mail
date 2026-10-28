@@ -1,0 +1,19 @@
+[Unit]
+Description=Lightweight mail management panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mail-panel
+EnvironmentFile=/etc/mail-panel.env
+ExecStart=/opt/mail-panel/.venv/bin/python /opt/mail-panel/app.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+# CyberPanel local mail utilities require administrative privileges.
+# Listen on loopback only; use the documented SSH tunnel or an HTTPS proxy.
+# CyberPanel's existing mail utilities may invoke privileged service commands.
+
+[Install]
+WantedBy=multi-user.target
