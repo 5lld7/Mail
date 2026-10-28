@@ -41,18 +41,18 @@ class PanelTests(unittest.TestCase):
 
     def test_full_email_lifecycle_and_confirmation(self):
         self.login()
-        data = {'domain': 'example.com', 'user': 'support', 'password': 'long-password-123'}
+        data = {'domain': 'example.com', 'user': 'support1', 'password': 'Abcd1234'}
         self.assertEqual(self.post('emails/create', data).status_code, 200)
-        self.assertEqual(self.client.get('/api/emails?domain=example.com').json['emails'], ['support@example.com'])
+        self.assertEqual(self.client.get('/api/emails?domain=example.com').json['emails'], ['support1@example.com'])
         self.assertEqual(self.post('emails/create', data).status_code, 400)
-        self.assertEqual(self.post('emails/delete', {'email': 'support@example.com'}).status_code, 400)
-        self.assertEqual(self.post('emails/delete', {'email': 'support@example.com', 'confirmation': 'support@example.com'}).status_code, 200)
+        self.assertEqual(self.post('emails/delete', {'email': 'support1@example.com'}).status_code, 400)
+        self.assertEqual(self.post('emails/delete', {'email': 'support1@example.com', 'confirmation': 'support1@example.com'}).status_code, 200)
         self.assertEqual(self.client.get('/api/emails?domain=example.com').json['emails'], [])
 
     def test_disallowed_domains_and_injection(self):
         self.login()
-        for user, domain in [('x; touch /tmp/no', 'example.com'), ('support', 'other.com')]:
-            self.assertEqual(self.post('emails/create', {'user': user, 'domain': domain, 'password': 'long-password-123'}).status_code, 400)
+        for user, domain in [('x; touch /tmp/no', 'example.com'), ('support1', 'other.com')]:
+            self.assertEqual(self.post('emails/create', {'user': user, 'domain': domain, 'password': 'Abcd1234'}).status_code, 400)
         self.assertEqual(self.client.get('/api/emails?domain=other.com').status_code, 400)
 
     def test_demo_cannot_clean_server(self):

@@ -64,9 +64,9 @@ def main():
             for asset in ('/', '/static/app.js', '/static/style.css'):
                 with opener.open(base + asset) as response:
                     assert response.status == 200 and len(response.read()) > 100
-            api('emails/create', {'user': 'smoke', 'domain': 'example.com', 'password': secrets.token_urlsafe(18)})
-            assert api('emails?domain=example.com')['emails'] == ['smoke@example.com']
-            api('emails/delete', {'email': 'smoke@example.com', 'confirmation': 'smoke@example.com'})
+            api('emails/create', {'user': 'smoke123', 'domain': 'example.com', 'password': 'Abcd1234'})
+            assert api('emails?domain=example.com')['emails'] == ['smoke123@example.com']
+            api('emails/delete', {'email': 'smoke123@example.com', 'confirmation': 'smoke123@example.com'})
             assert api('emails?domain=example.com')['emails'] == []
             api('logout', {})
             print('PASS: real HTTP startup, auth, assets, disk status, create/list/delete, logout')

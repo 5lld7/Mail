@@ -20,24 +20,26 @@
         <section class="card metric"><span>المساحة المتاحة</span><strong id="disk-free">—</strong><small>على قرص النظام</small></section>
         <section class="card metric"><span>حسابات البريد</span><strong id="email-count">—</strong><small>على الدومين المحدد</small></section>
       </div>
-      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="bulk-tab">＋ إنشاء بالعدد</button><button id="delete-tab">− حذف حسابات</button><button id="cleanup-tab">◈ تنظيف المساحة</button><button id="retention-tab">◷ الحذف بعد 24 ساعة</button></nav>
+      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="bulk-tab">＋ إنشاء بالعدد</button><button id="delete-tab">− حذف حسابات</button><button id="cleanup-tab">◈ تنظيف المساحة</button><button id="retention-tab">✓ الحسابات المفتوحة</button></nav>
       <section id="mail-section" class="card">
-        <div class="section-head"><div><h2>حسابات البريد</h2><p>أنشئ حساب جديد أو احذف حساب لم تعد تحتاجه.</p></div><label>الدومين<select id="domain"></select></label></div>
-        <form id="create-form" class="create-grid"><label>اسم الحساب<input id="email-user" placeholder="support" dir="ltr" maxlength="64" required pattern="[a-z0-9][a-z0-9._+\-]{0,63}" autocomplete="off"></label><label>كلمة مرور البريد<input id="email-password" type="password" minlength="12" maxlength="128" placeholder="12 حرف على الأقل" autocomplete="new-password" required></label><button class="primary">+ إنشاء حساب</button></form>
+        <div class="section-head"><div><h2>حسابات البريد</h2><p>الحساب الذي يُرصد دخوله ينتقل لصفحة «الحسابات المفتوحة». حدّث القائمة بعد استخدام البريد.</p></div><label>الدومين<select id="domain"></select></label></div>
+        <form id="create-form" class="create-grid"><label>اسم الحساب<input id="email-user" placeholder="ab12cd34" dir="ltr" minlength="8" maxlength="8" required pattern="[a-z0-9]{8}" autocomplete="off"></label><label>كلمة مرور البريد<input id="email-password" type="password" minlength="8" maxlength="8" pattern="[A-Za-z0-9]{8}" placeholder="8 حروف وأرقام" autocomplete="new-password" required></label><button class="primary">+ إنشاء حساب</button></form>
         <p class="muted">كلمات المرور الظاهرة هي آخر كلمات مرور حفظها البانل للحسابات التي أنشأها. الحسابات القديمة لا يمكن استرجاع كلمات مرورها من CyberPanel. رابط الويب ميل لا يحتوي على كلمة المرور.</p>
+        <p class="muted">الترتيب: الأقدم أولًا. للحسابات القديمة نستخدم ترتيب تسجيلها المحفوظ إن وجد، والحسابات التي لا نملك لها ترتيبًا تأتي في النهاية. ملف TXT يحتوي كلمات مرور؛ احفظه في مكان خاص.</p>
+        <div class="cleanup-controls"><button id="main-select-all">تحديد الكل / إلغاء</button><label>تحديد أول عدد<input id="main-select-count" type="number" min="0" max="2000" value="200"></label><button id="main-select-number">تحديد العدد</button><span id="main-selected-count">0 محدد</span><button id="main-export">تنزيل المحدد TXT</button><button id="main-delete" class="danger">حذف المحدد ورسائله</button></div>
         <div id="email-list" aria-live="polite"></div><div class="dialog-actions"><button id="previous-page">السابق</button><span id="page-label"></span><button id="next-page">التالي</button><button id="refresh">تحديث القائمة</button></div>
       </section>
       <section id="bulk-section" class="card" hidden>
         <h2>إنشاء حسابات بالعدد</h2><p>حتى 2000 حساب في الدفعة، بأسماء وكلمات مرور عشوائية. التنفيذ تدريجي في الخلفية ويخضع لمساحة السيرفر وحدود باقة CyberPanel. خليك على عدد صغير للتجربة الأول.</p>
         <form id="bulk-form">
-          <div class="create-grid"><label>الدومين<select id="bulk-domain"></select></label><label>عدد الحسابات<input id="bulk-count" type="number" min="1" max="2000" value="10" required></label><label>بادئة الأسماء<input id="bulk-prefix" value="mail" pattern="[a-z][a-z0-9]{0,15}" maxlength="16" required dir="ltr"></label></div>
+          <div class="create-grid"><label>الدومين<select id="bulk-domain"></select></label><label>عدد الحسابات<input id="bulk-count" type="number" min="1" max="2000" value="10" required></label><p>اسم الحساب قبل @ وكلمة مروره: 8 حروف وأرقام عشوائية لكل منهما.</p></div>
           <label class="check-label"><input id="bulk-public" type="checkbox"> اجعل حسابات هذه الدفعة عامة: أي شخص يعرف الإيميل يقدر يقرأ الرسائل بدون باسورد.</label>
           <button class="primary">بدء الإنشاء في الخلفية</button>
         </form>
         <h3>الدفعات</h3><button id="jobs-refresh">تحديث التقدم</button><div id="jobs-list" aria-live="polite"></div>
       </section>
       <section id="delete-section" class="card" hidden>
-        <h2>حذف مجموعة حسابات</h2><p>حدد الحسابات بنفسك، أو اكتب عددًا لاختيار أول حسابات من القائمة المرتبة أبجديًا. المعاينة تثبّت العناوين قبل تأكيد الحذف النهائي.</p>
+        <h2>حذف مجموعة حسابات</h2><p>حدد الحسابات بنفسك، أو اكتب عددًا لاختيار أول حسابات من القائمة المرتبة حسب الإنشاء المسجل. المعاينة تثبّت العناوين قبل تأكيد الحذف النهائي.</p>
         <div class="create-grid"><label>الدومين<select id="delete-domain"></select></label><label>عدد الحسابات (0 = التحديد اليدوي)<input id="delete-count" type="number" value="0" min="0" max="2000"></label><button id="delete-load">تحميل الحسابات</button></div>
         <button id="delete-select-all">تحديد / إلغاء تحديد الكل</button><div id="delete-list" class="file-list"></div>
         <button id="delete-preview" class="danger">معاينة الحسابات المطلوب حذفها</button>
@@ -50,11 +52,9 @@
         <div id="preview-result" hidden><h3 id="preview-summary"></h3><ul id="preview-files" class="file-list"></ul><button id="execute" class="danger">حذف الملفات المعروضة</button></div>
       </section>
       <section id="retention-section" class="card" hidden>
-        <h2>حسابات مؤقتة، من أول دخول.</h2>
-        <p>يشمل جميع حسابات CyberPanel على كل الدومينات، القديمة والجديدة. يبدأ العد من أول دخول ناجح عبر IMAP أو POP3 يرصدُه مراقب الدخول بعد تركيبه. فتح صفحة تسجيل الدخول وحده لا يبدأ العد، والدخول المتكرر لا يمدد المدة.</p>
-        <p>بعد 24 ساعة تُحذف بيانات الحساب ومجلد رسائله نهائيًا. الفحص كل دقيقة أثناء عمل الخدمة؛ عند توقف السيرفر أو فشل العملية قد يتأخر الحذف. لا يشمل ذلك محو النسخ الاحتياطية أو السجلات أو نسخ مزود الاستضافة.</p>
-        <p class="muted">ظهور الحسابات هنا لا يثبت أن المراقبة أو المؤقت يعملان. لازم اختبار دخول فعلي والتحقق من systemd على السيرفر قبل الاعتماد عليه. الحساب دون سجل دخول يظل في انتظار أول دخول مرصود؛ لا نفترض تاريخ استخدامه السابق.</p>
-        <button id="retention-refresh">تحديث حالة الحسابات</button>
+        <h2>الحسابات المفتوحة</h2><p>الحسابات التي رصد مراقب Dovecot دخولًا ناجحًا لها فقط. فتح رابط الويب ميل وحده لا يعني تسجيل دخول. الحذف بعد 24 ساعة متوقف؛ الحذف يدوي فقط.</p>
+        <p class="muted">لو المراقب غير مفعل أو لم يرصد دخولًا للحساب فلن يظهر هنا، حتى لو استُخدم قبل تركيب المراقب.</p>
+        <label>الدومين<select id="opened-domain"></select></label><div class="cleanup-controls"><button id="retention-refresh">تحديث الحسابات المفتوحة</button><button id="opened-select-all">تحديد الكل / إلغاء</button><button id="opened-delete" class="danger">حذف المحدد ورسائله</button><span id="opened-selected-count">0 محدد</span></div>
         <div id="retention-list" aria-live="polite"></div>
       </section>
     </div>

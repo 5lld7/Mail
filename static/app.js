@@ -1,4 +1,6 @@
 let csrf = '', statusData = null, plan = null, busy = false, accountRows = [], pageIndex = 0, deletePlan = null, createRequestId = null;
+const mainSelected = new Set(), openedSelected = new Set();
+let openedRows = [];
 const $ = id => document.getElementById(id);
 const bytes = n => { const units = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${units[i]}`; };
 function notice(message, error = false) { $('notice').textContent = message; $('notice').className = error ? 'error' : ''; $('notice').hidden = false; }
@@ -25,8 +27,8 @@ async function disk() {
 }
 async function loadEmails() {
   $('email-count').textContent = '—'; $('email-list').replaceChildren();
-  const result = await api(`accounts?domain=${encodeURIComponent($('domain').value)}`);
-  accountRows = result.accounts; pageIndex = 0; renderAccounts();
+  const result = await api(`accounts?domain=${encodeURIComponent($('domain').value)}&unopened=1`);
+  accountRows = result.accounts; for (const email of mainSelected) if (!accountRows.some(r => r.email === email)) mainSelected.delete(email); pageIndex = 0; renderAccounts();
 }
 function renderAccounts() {
   $('email-list').replaceChildren(); $('email-count').textContent = accountRows.length;
@@ -37,11 +39,12 @@ function renderAccounts() {
     const email = account.email;
     const row = document.createElement('div'); row.className = 'email-row';
     const details = document.createElement('div'); details.className = 'account-details';
+    const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'account-picker'; check.checked = mainSelected.has(email); check.setAttribute('aria-label', `تحديد ${email}`); check.onchange = () => { if (check.checked) mainSelected.add(email); else mainSelected.delete(email); updateSelection(); };
     const number = document.createElement('small'); number.textContent = `#${account.number}`;
     const name = document.createElement('span'); name.className = 'address'; name.textContent = email;
     const password = document.createElement('input'); password.type = 'text'; password.readOnly = true; password.dir = 'ltr'; password.autocomplete = 'off'; password.setAttribute('aria-label', `كلمة مرور ${email}`); password.value = account.password || 'كلمة المرور القديمة غير متاحة';
     const link = document.createElement('a'); link.href = account.webmail_url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'دخول الويب ميل';
-    details.append(number, name, password, link);
+    details.append(check, number, name, password, link);
     const actions = document.createElement('div'); actions.className = 'account-actions';
     if (account.password) {
       const toggle = document.createElement('button'); toggle.textContent = account.public ? 'إيقاف القراءة العامة' : 'جعله صندوقًا عامًا';
@@ -59,16 +62,18 @@ function renderAccounts() {
     };
     actions.append(button); row.append(details, actions); $('email-list').append(row);
   }
+  updateSelection();
 }
 async function dashboard() {
   $('login').hidden = true; $('dashboard').hidden = false; $('logout').hidden = false;
   await disk();
   $('mode').textContent = statusData.mode === 'demo' ? 'وضع تجريبي · بدون اتصال بسيرفر' : 'الوضع الفعلي · CyberPanel';
   $('domain').replaceChildren(...statusData.domains.map(d => new Option(d, d)));
-  for (const id of ['bulk-domain', 'delete-domain']) $(id).replaceChildren(...statusData.domains.map(d => new Option(d, d)));
+  for (const id of ['bulk-domain', 'delete-domain', 'opened-domain']) $(id).replaceChildren(...statusData.domains.map(d => new Option(d, d)));
   $('category').replaceChildren(...statusData.policies.map(p => new Option(p.label, p.id)));
   if (statusData.mode === 'demo') notice('أنت في الوضع التجريبي: الحسابات محلية للتجربة فقط، ولا يتم حذف أي ملفات من السيرفر.');
   await loadEmails();
+  if (location.pathname === '/opened') { tab('retention'); await loadRetention(); }
 }
 function confirmText(title, description, expected) {
   return new Promise(resolve => {
@@ -84,26 +89,29 @@ function confirmText(title, description, expected) {
 }
 $('login-form').onsubmit = e => { e.preventDefault(); action(async () => { const r = await api('login', {password: $('admin-password').value}); $('admin-password').value = ''; csrf = r.csrf; $('notice').hidden = true; await dashboard(); }); };
 $('logout').onclick = () => action(async () => { await api('logout', {}); location.reload(); });
-$('domain').onchange = () => action(loadEmails);
+$('domain').onchange = () => { mainSelected.clear(); action(loadEmails); };
 $('refresh').onclick = () => action(loadEmails);
 $('create-form').onsubmit = e => { e.preventDefault(); action(async () => { await api('emails/create', {domain: $('domain').value, user: $('email-user').value, password: $('email-password').value}); $('email-password').value = ''; $('email-user').value = ''; notice('تم إنشاء حساب البريد.'); await loadEmails(); }); };
 function tab(section) { for (const name of ['mail', 'bulk', 'delete', 'cleanup', 'retention']) { $(`${name}-section`).hidden = name !== section; $(`${name}-tab`).classList.toggle('active', name === section); } }
 $('mail-tab').onclick = () => tab('mail'); $('cleanup-tab').onclick = () => tab('cleanup');
 async function loadRetention() {
-  const data = await api('retention');
+  const data = await api(`accounts?domain=${encodeURIComponent($('opened-domain').value)}&opened=1`);
+  openedRows = data.accounts;
+  for (const email of openedSelected) if (!openedRows.some(r => r.email === email)) openedSelected.delete(email);
   $('retention-list').replaceChildren();
-  if (data.mode === 'demo') { const p = document.createElement('p'); p.textContent = 'الوضع التجريبي: لا توجد مراقبة دخول أو عمليات حذف تلقائي.'; $('retention-list').append(p); return; }
-  for (const account of data.accounts) {
-    const row = document.createElement('div'); row.className = 'email-row';
-    const address = document.createElement('span'); address.className = 'address'; address.textContent = account.email;
-    const expiry = document.createElement('span');
-    expiry.textContent = account.error || (account.expires_at ? `موعد الحذف: ${new Date(account.expires_at * 1000).toLocaleString('ar-EG')}` : 'في انتظار أول دخول مرصود');
-    row.append(address, expiry); $('retention-list').append(row);
+  if (!openedRows.length) { const p = document.createElement('p'); p.textContent = 'لا توجد حسابات لها دخول مرصود. لا توجد عمليات حذف تلقائي.'; $('retention-list').append(p); }
+  for (const account of openedRows) {
+    const row = document.createElement('label'); row.className = 'check-label';
+    const check = document.createElement('input'); check.type = 'checkbox'; check.value = account.email; check.checked = openedSelected.has(account.email);
+    check.onchange = () => { if (check.checked) openedSelected.add(account.email); else openedSelected.delete(account.email); updateSelection(); };
+    const text = document.createElement('span'); text.textContent = `${account.email} · أول دخول مرصود: ${new Date(account.first_login * 1000).toLocaleString('ar-EG')}`;
+    row.append(check, text); $('retention-list').append(row);
   }
-  for (const email of data.pending) { const p = document.createElement('p'); p.textContent = `حذف غير مكتمل يحتاج متابعة: ${email}`; $('retention-list').append(p); }
+  updateSelection();
 }
-$('retention-tab').onclick = () => { tab('retention'); action(loadRetention); };
+$('retention-tab').onclick = () => { location.href = '/opened'; };
 $('retention-refresh').onclick = () => action(loadRetention);
+$('opened-domain').onchange = () => { openedSelected.clear(); action(loadRetention); };
 $('category').onchange = () => { plan = null; $('preview-result').hidden = true; };
 $('preview').onclick = () => action(async () => {
   plan = null; $('preview-result').hidden = true;
@@ -143,14 +151,14 @@ $('bulk-tab').onclick = () => { tab('bulk'); action(loadJobs); };
 $('jobs-refresh').onclick = () => action(loadJobs);
 let jobsLoading = false;
 setInterval(async () => { if (!document.hidden && !$('bulk-section').hidden && !$('dashboard').hidden && !busy && !jobsLoading) { jobsLoading = true; try { await loadJobs(); } catch (e) { notice(e.message, true); } finally { jobsLoading = false; } } }, 4000);
-for (const id of ['bulk-domain', 'bulk-count', 'bulk-prefix', 'bulk-public']) $(id).addEventListener('change', () => { createRequestId = null; });
+for (const id of ['bulk-domain', 'bulk-count', 'bulk-public']) $(id).addEventListener('change', () => { createRequestId = null; });
 $('bulk-form').onsubmit = async event => {
   event.preventDefault();
   const isPublic = $('bulk-public').checked;
   if (isPublic && !await confirmText('إنشاء صناديق عامة؟', 'أي شخص يعرف العنوان يستطيع قراءة رسائله. اكتب «صناديق عامة» للتأكيد.', 'صناديق عامة')) return;
   action(async () => {
     createRequestId ||= crypto.randomUUID();
-    await api('bulk/create', {domain: $('bulk-domain').value, count: Number($('bulk-count').value), prefix: $('bulk-prefix').value, public: isPublic, confirmation: isPublic ? 'صناديق عامة' : '', request_id: createRequestId});
+    await api('bulk/create', {domain: $('bulk-domain').value, count: Number($('bulk-count').value), public: isPublic, confirmation: isPublic ? 'صناديق عامة' : '', request_id: createRequestId});
     createRequestId = null; notice('تم تسجيل الدفعة. الحسابات الناجحة وكلمات مرورها تظهر في حسابات البريد بعد تحديثها.'); await loadJobs();
   });
 };
@@ -158,7 +166,7 @@ function invalidateDelete() { deletePlan = null; $('delete-plan').hidden = true;
 async function loadDeleteAccounts() {
   invalidateDelete(); $('delete-list').replaceChildren();
   const result = await api(`emails?domain=${encodeURIComponent($('delete-domain').value)}`);
-  for (const [index, email] of result.emails.slice().sort().entries()) {
+  for (const [index, email] of result.emails.entries()) {
     const label = document.createElement('label'); label.className = 'check-label';
     const check = document.createElement('input'); check.type = 'checkbox'; check.value = email; check.onchange = invalidateDelete;
     const text = document.createElement('span'); text.textContent = `#${index + 1} ${email}`; text.dir = 'ltr'; label.append(check, text); $('delete-list').append(label);
@@ -179,3 +187,37 @@ $('delete-execute').onclick = async () => {
   if (!deletePlan || !await confirmText('تأكيد حذف المجموعة', 'راجع القائمة؛ الحذف نهائي للحسابات ورسائلها. اكتب العبارة المعروضة للتأكيد.', deletePlan.confirmation)) return;
   action(async () => { await api('bulk/delete/execute', {token: deletePlan.token, confirmation: deletePlan.confirmation}); invalidateDelete(); tab('bulk'); await loadJobs(); notice('تم تسجيل دفعة الحذف. تابع النتيجة هنا.'); });
 };
+
+function updateSelection() {
+  $('main-selected-count').textContent = `${mainSelected.size} محدد`;
+  $('opened-selected-count').textContent = `${openedSelected.size} محدد`;
+}
+$('main-select-all').onclick = () => {
+  const all = accountRows.every(r => mainSelected.has(r.email)); mainSelected.clear();
+  if (!all) accountRows.forEach(r => mainSelected.add(r.email)); renderAccounts();
+};
+$('main-select-number').onclick = () => {
+  const n = Number($('main-select-count').value);
+  if (!Number.isInteger(n) || n < 0 || n > accountRows.length || n > 2000) { notice('اكتب عددًا صحيحًا لا يتجاوز الحسابات المعروضة أو 2000.', true); return; }
+  mainSelected.clear(); accountRows.slice(0, n).forEach(r => mainSelected.add(r.email)); renderAccounts();
+};
+$('main-export').onclick = () => action(async () => {
+  const response = await fetch('/api/accounts/export', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, body: JSON.stringify({domain: $('domain').value, emails: [...mainSelected]})});
+  if (!response.ok) { const error = await response.json(); throw new Error(error.error || 'تعذر تنزيل الملف.'); }
+  const blob = await response.blob(), url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = 'mail-accounts.txt'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+async function deleteSelection(domain, selected) {
+  if (!selected.size) { notice('حدد حسابات للحذف أولًا.', true); return; }
+  let preview;
+  try { preview = await api('bulk/delete/preview', {domain, emails: [...selected]}); } catch (e) { notice(e.message, true); return; }
+  if (!await confirmText('حذف الحسابات ورسائلها نهائيًا', `العناوين التالية فقط:\n${preview.emails.join('\n')}\nاكتب العبارة لتأكيد الحذف.`, preview.confirmation)) return;
+  await action(async () => { await api('bulk/delete/execute', {token: preview.token, confirmation: preview.confirmation}); selected.clear(); updateSelection(); tab('bulk'); await loadJobs(); notice('تم تسجيل حذف الحسابات ورسائلها. تابع التقدم والعمليات غير المكتملة هنا.'); });
+}
+$('main-delete').onclick = () => deleteSelection($('domain').value, mainSelected);
+$('opened-select-all').onclick = () => {
+  const all = openedRows.every(r => openedSelected.has(r.email)); openedSelected.clear();
+  if (!all) openedRows.forEach(r => openedSelected.add(r.email));
+  $('retention-list').querySelectorAll('input[type=checkbox]').forEach(c => c.checked = openedSelected.has(c.value)); updateSelection();
+};
+$('opened-delete').onclick = () => deleteSelection($('opened-domain').value, openedSelected);

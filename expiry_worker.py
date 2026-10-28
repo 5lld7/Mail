@@ -35,6 +35,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--apply', action='store_true', help='Permanently delete expired accounts and mail data')
     args = parser.parse_args()
+    if args.apply:
+        print('Automatic 24-hour expiry is disabled. Use explicit panel deletion instead.')
+        raise SystemExit(0)
     if os.environ.get('PANEL_MODE', 'cyberpanel') != 'cyberpanel':
         parser.error('Expiry worker only supports real CyberPanel mode')
     backend = MailBackend('cyberpanel', '')

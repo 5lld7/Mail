@@ -33,6 +33,10 @@ class Store:
             ''')
             if 'identity' not in [r['name'] for r in db.execute('PRAGMA table_info(tasks)')]:
                 db.execute("ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''")
+            if 'created_order' not in [r['name'] for r in db.execute('PRAGMA table_info(accounts)')]:
+                db.execute('ALTER TABLE accounts ADD COLUMN created_order INTEGER')
+                db.execute("ALTER TABLE accounts ADD COLUMN order_source TEXT NOT NULL DEFAULT 'created'")
+                db.execute("UPDATE accounts SET created_order=rowid,order_source='legacy' WHERE status='active'")
 
     @contextlib.contextmanager
     def db(self):
@@ -48,7 +52,7 @@ class Store:
     def save(self, email, password, public=False, status='creating'):
         encrypted = self.cipher.encrypt(password.encode())
         with self.db() as db:
-            db.execute('INSERT INTO accounts VALUES (?,?,?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password, public=excluded.public, status=excluded.status',
+            db.execute('INSERT INTO accounts(email,password,public,status) VALUES (?,?,?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password, public=excluded.public, status=excluded.status,created_order=NULL,order_source=\'created\'',
                        (email, encrypted, int(public), status))
 
     def account(self, email):
@@ -62,7 +66,12 @@ class Store:
 
     def status(self, email, status):
         with self.db() as db:
-            db.execute('UPDATE accounts SET status=? WHERE email=?', (status, email))
+            db.execute("UPDATE accounts SET status=?,created_order=CASE WHEN ?='active' AND created_order IS NULL THEN (SELECT COALESCE(MAX(created_order),0)+1 FROM accounts) ELSE created_order END WHERE email=?", (status, status, email))
+
+    def ordered(self, emails):
+        with self.db() as db:
+            metadata = {r['email']: dict(r) for r in db.execute('SELECT email,created_order,order_source FROM accounts WHERE created_order IS NOT NULL')}
+        return sorted(emails, key=lambda e: (metadata.get(e, {}).get('created_order', float('inf')), e)), metadata
 
     def enqueue(self, kind, emails, request_id, passwords=None, public=False, identities=None):
         with self.db() as db:
@@ -74,7 +83,7 @@ class Store:
             for email in emails:
                 if kind == 'create':
                     # Never overwrite credentials of an existing managed account.
-                    db.execute('INSERT INTO accounts VALUES (?,?,?,?)',
+                    db.execute('INSERT INTO accounts(email,password,public,status) VALUES (?,?,?,?)',
                                (email, self.cipher.encrypt(passwords[email].encode()), int(public), 'creating'))
                 import json
                 identity = json.dumps((identities or {}).get(email)) if kind == 'delete' else ''

@@ -1,6 +1,7 @@
 """Single background worker; durable jobs resume after service restarts."""
 import os
 import json
+import re
 import shutil
 import threading
 import time
@@ -29,6 +30,9 @@ def process_one(store, backend, mode):
                 with store.db() as db:
                     row = db.execute('SELECT password FROM accounts WHERE email=?', (email,)).fetchone()
                 password = store.cipher.decrypt(row['password']).decode()
+                if (not re.fullmatch(r'(?=.*[a-z])(?=.*[0-9])[a-z0-9]{8}', user)
+                        or not re.fullmatch(r'(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{8}', password)):
+                    raise ValueError('هذه دفعة قديمة بصيغة مختلفة؛ ألغ المتبقي وأنشئ دفعة جديدة بصيغة 8 حروف وأرقام.')
                 backend.call('create', domain=domain, user=user, password=password)
                 if email not in backend.call('list', domain=domain):
                     raise ValueError('تعذر التأكد من إنشاء الحساب؛ راجعه قبل تكرار العملية.')

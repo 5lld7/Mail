@@ -52,7 +52,9 @@ class BulkTests(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(len({r['password'] for r in rows}), 3)
         for row in rows:
-            self.assertGreaterEqual(len(row['password']), 24)
+            self.assertEqual(len(row['password']), 8)
+            self.assertRegex(row['password'], r'^[a-z0-9]{8}$')
+            self.assertRegex(row['email'].split('@')[0], r'^[a-z0-9]{8}$')
             self.assertNotIn(row['password'].encode(), self.store.path.read_bytes())
             self.assertFalse(row['public'])
         self.assertEqual(os.stat(self.store.path).st_mode & 0o777, 0o600)
@@ -150,6 +152,59 @@ class BulkTests(unittest.TestCase):
         for _ in range(30):
             visitor.post('/public-api/messages', json={'email': 'missing@example.com'})
         self.assertEqual(visitor.post('/public-api/messages', json={'email': 'missing@example.com'}).status_code, 429)
+
+    def test_creation_order_selection_and_exact_text_export(self):
+        for user in ('zzzzzzz1', 'aaaaaaa1'):
+            self.assertEqual(self.post('emails/create', {'domain': 'example.com', 'user': user, 'password': 'Abcd1234'}).status_code, 200)
+        rows = self.client.get('/api/accounts?domain=example.com').json['accounts']
+        self.assertEqual([r['email'] for r in rows], ['zzzzzzz1@example.com', 'aaaaaaa1@example.com'])
+        preview = self.post('bulk/delete/preview', {'domain': 'example.com', 'count': 1}).json
+        self.assertEqual(preview['emails'], ['zzzzzzz1@example.com'])
+        export = self.post('accounts/export', {'domain': 'example.com', 'emails': [r['email'] for r in reversed(rows)]})
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export.text.splitlines(), [f'{r["email"]} : Abcd1234 : https://mail.jxil.org:8090/snappymail/' for r in rows])
+        self.assertEqual(export.headers['Cache-Control'], 'no-store')
+        self.assertIn('attachment', export.headers['Content-Disposition'])
+
+    def test_export_protected_and_unknown_password_not_fabricated(self):
+        self.backend.call('create', domain='example.com', user='legacy01', password='Abcd1234')
+        self.assertEqual(self.post('accounts/export', {'domain': 'example.com', 'emails': ['legacy01@example.com']}).status_code, 400)
+        self.assertEqual(self.app.test_client().post('/api/accounts/export', json={}).status_code, 401)
+        self.assertEqual(self.client.post('/api/accounts/export', json={}).status_code, 403)
+
+    def test_opened_page_filters_only_observed_logins(self):
+        self.create_batch(2)
+        self.drain()
+        emails = self.backend.call('inventory')
+        self.app.config['MODE'] = 'cyberpanel'
+        with patch('retention.read_login', side_effect=lambda address: {'first_login': 1700000000} if address == emails[0] else None):
+            rows = self.client.get('/api/accounts?domain=example.com&opened=1').json['accounts']
+            unopened = self.client.get('/api/accounts?domain=example.com&unopened=1').json['accounts']
+        self.assertEqual([r['email'] for r in rows], [emails[0]])
+        self.assertEqual([r['email'] for r in unopened], [emails[1]])
+        self.assertEqual(rows[0]['first_login'], 1700000000)
+        self.assertEqual(self.client.get('/opened').status_code, 200)
+
+    def test_single_new_account_requires_eight_alphanumeric_characters(self):
+        for user, password in [('short1', 'Abcd1234'), ('abcdefgh', 'Abcd1234'), ('abcd1234', 'too-long-123'), ('abcd1234', 'abcdefgh')]:
+            self.assertEqual(self.post('emails/create', {'domain': 'example.com', 'user': user, 'password': password}).status_code, 400)
+
+    def test_expiry_command_cannot_delete_automatically(self):
+        import subprocess
+        import sys
+        result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / 'expiry_worker.py'), '--apply'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('disabled', result.stdout)
+
+    def test_legacy_vault_migration_preserves_credentials(self):
+        import sqlite3
+        path = Path(self.temp.name) / 'old.sqlite'
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE accounts(email TEXT PRIMARY KEY,password BLOB NOT NULL,public INTEGER NOT NULL,status TEXT NOT NULL)')
+            db.execute('INSERT INTO accounts VALUES (?,?,?,?)', ('old@example.com', self.store.cipher.encrypt(b'old-password'), 0, 'active'))
+        migrated = management.Store(path, 'x' * 40)
+        self.assertEqual(migrated.account('old@example.com')['password'], 'old-password')
+        self.assertEqual(migrated.account('old@example.com')['order_source'], 'legacy')
 
 
 if __name__ == '__main__':

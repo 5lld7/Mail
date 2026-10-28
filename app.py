@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import string
 import shutil
 import sqlite3
 import subprocess
@@ -13,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, Response, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import cleanup
@@ -23,6 +24,15 @@ import management
 BASE = Path(__file__).resolve().parent
 DOMAIN = re.compile(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
 USER = re.compile(r'[a-z0-9][a-z0-9._+-]{0,63}\Z')
+WEBMAIL_URL = 'https://mail.jxil.org:8090/snappymail/'
+
+
+def random_eight():
+    alphabet = string.ascii_lowercase + string.digits
+    while True:
+        value = ''.join(secrets.choice(alphabet) for _ in range(8))
+        if any(c.isalpha() for c in value) and any(c.isdigit() for c in value):
+            return value
 
 
 class PanelError(Exception):
@@ -140,6 +150,7 @@ def create_app(overrides=None):
         return jsonify(error='حدث خطأ داخلي. راجع سجل الخدمة.'), 500
 
     @app.get('/')
+    @app.get('/opened')
     def index():
         return render_template('index.html')
 
@@ -229,22 +240,53 @@ def create_app(overrides=None):
     @app.get('/api/emails')
     def emails():
         domain = domain_value(request.args.get('domain'))
-        return jsonify(emails=backend.call('list', domain=domain))
+        return jsonify(emails=store.ordered(backend.call('list', domain=domain))[0])
 
     @app.get('/api/accounts')
     def accounts():
         domain = domain_value(request.args.get('domain'))
-        addresses = sorted(backend.call('list', domain=domain))
-        webmail = os.environ.get('PANEL_WEBMAIL_URL', 'https://mail.jxil.org')
+        addresses, metadata = store.ordered(backend.call('list', domain=domain))
+        webmail = os.environ.get('PANEL_WEBMAIL_URL', WEBMAIL_URL)
         if urlparse(webmail).scheme != 'https' or not urlparse(webmail).hostname:
-            webmail = 'https://mail.jxil.org'
+            webmail = WEBMAIL_URL
         rows = []
         for index, address in enumerate(addresses, 1):
             account = store.account(address)
+            first_login = None
+            if app.config['MODE'] == 'cyberpanel':
+                try:
+                    marker = retention.read_login(address)
+                    first_login = marker['first_login'] if marker else None
+                except (OSError, ValueError):
+                    pass
+            if request.args.get('opened') == '1' and first_login is None:
+                continue
+            if request.args.get('unopened') == '1' and first_login is not None:
+                continue
             rows.append({'number': index, 'email': address,
                          'password': account['password'] if account else None,
-                         'public': bool(account and account['public']), 'webmail_url': webmail})
+                         'public': bool(account and account['public']), 'webmail_url': webmail,
+                         'first_login': first_login, 'order_source': metadata.get(address, {}).get('order_source', 'unknown')})
         return jsonify(accounts=rows)
+
+    @app.post('/api/accounts/export')
+    def export_accounts():
+        domain = domain_value(request.json.get('domain'))
+        selected = request.json.get('emails')
+        if not isinstance(selected, list) or not 1 <= len(selected) <= 2000 or not all(isinstance(e, str) for e in selected):
+            raise ValueError('حدد من 1 إلى 2000 حساب للتنزيل.')
+        current = backend.call('list', domain=domain)
+        if not set(selected).issubset(current):
+            raise ValueError('القائمة اتغيرت؛ حدّث الحسابات وحددها من جديد.')
+        ordered, _ = store.ordered(set(selected))
+        lines = []
+        for address in ordered:
+            account = store.account(address)
+            if not account:
+                raise ValueError('ضمن التحديد حسابات كلمات مرورها غير محفوظة. استبعدها من التحديد قبل التنزيل.')
+            lines.append(f"{address} : {account['password']} : {WEBMAIL_URL}")
+        return Response('\r\n'.join(lines) + '\r\n', content_type='text/plain; charset=utf-8',
+                        headers={'Content-Disposition': 'attachment; filename="mail-accounts.txt"'})
 
     @app.get('/api/jobs')
     def jobs():
@@ -265,9 +307,6 @@ def create_app(overrides=None):
         count = data.get('count')
         if type(count) is not int or not 1 <= count <= 2000:
             raise ValueError('العدد يجب أن يكون من 1 إلى 2000.')
-        prefix = data.get('prefix', 'mail')
-        if not isinstance(prefix, str) or not re.fullmatch(r'[a-z][a-z0-9]{0,15}', prefix):
-            raise ValueError('بادئة الاسم: حروف إنجليزية صغيرة وأرقام، بحد أقصى 16 حرفًا.')
         public = data.get('public') is True
         if public and data.get('confirmation') != 'صناديق عامة':
             raise ValueError('تفعيل القراءة بالإيميل فقط يحتاج تأكيد «صناديق عامة».')
@@ -276,9 +315,16 @@ def create_app(overrides=None):
             raise ValueError('حدّث الصفحة للحصول على معرف طلب صالح.')
         if shutil.disk_usage('/').free < 300 * 1024 ** 2:
             raise ValueError('المساحة المتاحة أقل من 300 ميجابايت؛ نظف القرص أولًا.')
-        suffix = secrets.token_hex(5)
-        addresses = [f'{prefix}{suffix}{n}@{domain}' for n in range(1, count + 1)]
-        passwords = {address: secrets.token_urlsafe(18) for address in addresses}
+        occupied = set(backend.call('list', domain=domain))
+        with store.db() as db:
+            occupied.update(r['email'] for r in db.execute('SELECT email FROM accounts'))
+        addresses = []
+        while len(addresses) < count:
+            address = random_eight() + '@' + domain
+            if address not in occupied:
+                occupied.add(address)
+                addresses.append(address)
+        passwords = {address: random_eight() for address in addresses}
         job = store.enqueue('create', addresses, key, passwords, public)
         return jsonify(job=job, count=count), 202
 
@@ -286,14 +332,14 @@ def create_app(overrides=None):
     def bulk_delete_preview():
         data = request.json
         domain = domain_value(data.get('domain'))
-        current = sorted(backend.call('list', domain=domain))
+        current, _ = store.ordered(backend.call('list', domain=domain))
         count = data.get('count', 0)
         if type(count) is not int or not 0 <= count <= 2000:
             raise ValueError('العدد يجب أن يكون من 0 إلى 2000.')
         selected = data.get('emails', [])
         if not isinstance(selected, list) or len(selected) > 2000 or not all(isinstance(e, str) for e in selected):
             raise ValueError('قائمة حسابات غير صالحة.')
-        emails = current[:count] if count else sorted(set(selected))
+        emails = current[:count] if count else [e for e in current if e in set(selected)]
         if not emails or len(emails) > 2000 or not set(emails).issubset(current):
             raise ValueError('حدد حسابات موجودة للحذف.')
         token = secrets.token_urlsafe(24)
@@ -342,27 +388,27 @@ def create_app(overrides=None):
     @app.get('/api/retention')
     def retention_status():
         if app.config['MODE'] == 'demo':
-            return jsonify(mode='demo', accounts=[], pending=[], monitoring='not_verified')
+            return jsonify(mode='demo', accounts=[], pending=[], monitoring='not_verified', automatic_expiry=False)
         accounts = []
         for email in backend.call('inventory'):
             try:
                 marker = retention.read_login(email)
                 accounts.append({'email': email, 'first_login': marker['first_login'] if marker else None,
-                                 'expires_at': marker['first_login'] + retention.TTL if marker else None})
+                                 'expires_at': None})
             except (OSError, ValueError):
                 accounts.append({'email': email, 'error': 'تعذر قراءة سجل أول دخول؛ لن يُحذف تلقائيًا.'})
         return jsonify(mode='cyberpanel', accounts=accounts, pending=retention.pending_jobs(),
-                       monitoring='not_verified')
+                       monitoring='not_verified', automatic_expiry=False)
 
     @app.post('/api/emails/create')
     def create_email():
         data = request.json
         domain = domain_value(data.get('domain'))
         user, password = data.get('user', ''), data.get('password', '')
-        if not isinstance(user, str) or not USER.fullmatch(user):
-            raise ValueError('اسم البريد يجب أن يكون بحروف إنجليزية صغيرة، بدون مسافات.')
-        if not isinstance(password, str) or not 12 <= len(password) <= 128 or '\x00' in password:
-            raise ValueError('كلمة مرور البريد يجب أن تكون من 12 إلى 128 حرفًا.')
+        if not isinstance(user, str) or not re.fullmatch(r'(?=.*[a-z])(?=.*[0-9])[a-z0-9]{8}', user):
+            raise ValueError('اسم الحساب الجديد يجب أن يكون 8 حروف إنجليزية صغيرة وأرقام فقط، ويحتوي الاثنين.')
+        if not isinstance(password, str) or not re.fullmatch(r'(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{8}', password):
+            raise ValueError('كلمة مرور البريد الجديد يجب أن تكون 8 حروف وأرقام فقط وتحتوي الاثنين.')
         with mutation_lock:
             if app.config['MODE'] == 'cyberpanel':
                 with retention.operation_lock():
