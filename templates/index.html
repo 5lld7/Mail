@@ -20,11 +20,28 @@
         <section class="card metric"><span>المساحة المتاحة</span><strong id="disk-free">—</strong><small>على قرص النظام</small></section>
         <section class="card metric"><span>حسابات البريد</span><strong id="email-count">—</strong><small>على الدومين المحدد</small></section>
       </div>
-      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="cleanup-tab">◈ تنظيف المساحة</button><button id="retention-tab">◷ الحذف بعد 24 ساعة</button></nav>
+      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="bulk-tab">＋ إنشاء بالعدد</button><button id="delete-tab">− حذف حسابات</button><button id="cleanup-tab">◈ تنظيف المساحة</button><button id="retention-tab">◷ الحذف بعد 24 ساعة</button></nav>
       <section id="mail-section" class="card">
         <div class="section-head"><div><h2>حسابات البريد</h2><p>أنشئ حساب جديد أو احذف حساب لم تعد تحتاجه.</p></div><label>الدومين<select id="domain"></select></label></div>
         <form id="create-form" class="create-grid"><label>اسم الحساب<input id="email-user" placeholder="support" dir="ltr" maxlength="64" required pattern="[a-z0-9][a-z0-9._+\-]{0,63}" autocomplete="off"></label><label>كلمة مرور البريد<input id="email-password" type="password" minlength="12" maxlength="128" placeholder="12 حرف على الأقل" autocomplete="new-password" required></label><button class="primary">+ إنشاء حساب</button></form>
-        <div id="email-list" aria-live="polite"></div><button id="refresh">تحديث القائمة</button>
+        <p class="muted">كلمات المرور الظاهرة هي آخر كلمات مرور حفظها البانل للحسابات التي أنشأها. الحسابات القديمة لا يمكن استرجاع كلمات مرورها من CyberPanel. رابط الويب ميل لا يحتوي على كلمة المرور.</p>
+        <div id="email-list" aria-live="polite"></div><div class="dialog-actions"><button id="previous-page">السابق</button><span id="page-label"></span><button id="next-page">التالي</button><button id="refresh">تحديث القائمة</button></div>
+      </section>
+      <section id="bulk-section" class="card" hidden>
+        <h2>إنشاء حسابات بالعدد</h2><p>حتى 2000 حساب في الدفعة، بأسماء وكلمات مرور عشوائية. التنفيذ تدريجي في الخلفية ويخضع لمساحة السيرفر وحدود باقة CyberPanel. خليك على عدد صغير للتجربة الأول.</p>
+        <form id="bulk-form">
+          <div class="create-grid"><label>الدومين<select id="bulk-domain"></select></label><label>عدد الحسابات<input id="bulk-count" type="number" min="1" max="2000" value="10" required></label><label>بادئة الأسماء<input id="bulk-prefix" value="mail" pattern="[a-z][a-z0-9]{0,15}" maxlength="16" required dir="ltr"></label></div>
+          <label class="check-label"><input id="bulk-public" type="checkbox"> اجعل حسابات هذه الدفعة عامة: أي شخص يعرف الإيميل يقدر يقرأ الرسائل بدون باسورد.</label>
+          <button class="primary">بدء الإنشاء في الخلفية</button>
+        </form>
+        <h3>الدفعات</h3><button id="jobs-refresh">تحديث التقدم</button><div id="jobs-list" aria-live="polite"></div>
+      </section>
+      <section id="delete-section" class="card" hidden>
+        <h2>حذف مجموعة حسابات</h2><p>حدد الحسابات بنفسك، أو اكتب عددًا لاختيار أول حسابات من القائمة المرتبة أبجديًا. المعاينة تثبّت العناوين قبل تأكيد الحذف النهائي.</p>
+        <div class="create-grid"><label>الدومين<select id="delete-domain"></select></label><label>عدد الحسابات (0 = التحديد اليدوي)<input id="delete-count" type="number" value="0" min="0" max="2000"></label><button id="delete-load">تحميل الحسابات</button></div>
+        <button id="delete-select-all">تحديد / إلغاء تحديد الكل</button><div id="delete-list" class="file-list"></div>
+        <button id="delete-preview" class="danger">معاينة الحسابات المطلوب حذفها</button>
+        <div id="delete-plan" hidden><h3 id="delete-summary"></h3><ul id="delete-addresses" class="file-list"></ul><button id="delete-execute" class="danger">تأكيد الحذف النهائي</button></div>
       </section>
       <section id="cleanup-section" class="card" hidden>
         <h2>مساحة أكتر، بخطوات واضحة.</h2><p>المعاينة تعرض ملفات مؤرشفة أو كاش أقدم من 14 يومًا. الملفات النشطة والمواقع ورسائل البريد خارج نطاق التنظيف.</p>

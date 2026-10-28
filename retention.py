@@ -213,6 +213,8 @@ def purge_mailbox(backend, email, expected_token=None):
         pass
     if os.path.lexists(path):
         raise ValueError('Mailbox data remains; purge incomplete')
+    import management
+    management.forget(os.environ.get('PANEL_MANAGEMENT_DB', str(STATE_ROOT / 'managed.sqlite3')), email)
     pending.unlink()
 
 
