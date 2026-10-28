@@ -65,14 +65,29 @@ $('logout').onclick = () => action(async () => { await api('logout', {}); locati
 $('domain').onchange = () => action(loadEmails);
 $('refresh').onclick = () => action(loadEmails);
 $('create-form').onsubmit = e => { e.preventDefault(); action(async () => { await api('emails/create', {domain: $('domain').value, user: $('email-user').value, password: $('email-password').value}); $('email-password').value = ''; $('email-user').value = ''; notice('تم إنشاء حساب البريد.'); await loadEmails(); }); };
-function tab(mail) { $('mail-section').hidden = !mail; $('cleanup-section').hidden = mail; $('mail-tab').classList.toggle('active', mail); $('cleanup-tab').classList.toggle('active', !mail); }
-$('mail-tab').onclick = () => tab(true); $('cleanup-tab').onclick = () => tab(false);
+function tab(section) { for (const name of ['mail', 'cleanup', 'retention']) { $(`${name}-section`).hidden = name !== section; $(`${name}-tab`).classList.toggle('active', name === section); } }
+$('mail-tab').onclick = () => tab('mail'); $('cleanup-tab').onclick = () => tab('cleanup');
+async function loadRetention() {
+  const data = await api('retention');
+  $('retention-list').replaceChildren();
+  if (data.mode === 'demo') { const p = document.createElement('p'); p.textContent = 'الوضع التجريبي: لا توجد مراقبة دخول أو عمليات حذف تلقائي.'; $('retention-list').append(p); return; }
+  for (const account of data.accounts) {
+    const row = document.createElement('div'); row.className = 'email-row';
+    const address = document.createElement('span'); address.className = 'address'; address.textContent = account.email;
+    const expiry = document.createElement('span');
+    expiry.textContent = account.error || (account.expires_at ? `موعد الحذف: ${new Date(account.expires_at * 1000).toLocaleString('ar-EG')}` : 'في انتظار أول دخول مرصود');
+    row.append(address, expiry); $('retention-list').append(row);
+  }
+  for (const email of data.pending) { const p = document.createElement('p'); p.textContent = `حذف غير مكتمل يحتاج متابعة: ${email}`; $('retention-list').append(p); }
+}
+$('retention-tab').onclick = () => { tab('retention'); action(loadRetention); };
+$('retention-refresh').onclick = () => action(loadRetention);
 $('category').onchange = () => { plan = null; $('preview-result').hidden = true; };
 $('preview').onclick = () => action(async () => {
   plan = null; $('preview-result').hidden = true;
   plan = await api('cleanup/preview', {category: $('category').value});
   $('preview-summary').textContent = `${plan.files.length} ملف · ${bytes(plan.bytes)} قابلة للتنظيف`;
-  $('preview-files').replaceChildren(...plan.files.map(f => { const li = document.createElement('li'); li.textContent = `${f.name} — ${bytes(f.bytes)}`; return li; }));
+  $('preview-files').replaceChildren(...plan.files.map(f => { const li = document.createElement('li'); li.textContent = `${f.directory ? f.directory + '/' : ''}${f.name} — ${bytes(f.bytes)}`; return li; }));
   $('preview-result').hidden = false; $('execute').hidden = !plan.files.length;
   if (!plan.available) notice('المجلد غير موجود على السيرفر؛ لا توجد ملفات للتنظيف.');
 });

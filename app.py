@@ -16,6 +16,7 @@ from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import cleanup
+import retention
 
 BASE = Path(__file__).resolve().parent
 DOMAIN = re.compile(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
@@ -37,9 +38,9 @@ class MailBackend:
     def call(self, action, **data):
         if self.mode == 'demo':
             with sqlite3.connect(self.db_path) as db:
-                if action == 'list':
+                if action in ('list', 'inventory'):
                     return [r[0] for r in db.execute('SELECT email FROM emails ORDER BY email')
-                            if r[0].endswith('@' + data['domain'])]
+                            if action == 'inventory' or r[0].endswith('@' + data['domain'])]
                 if action == 'create':
                     try:
                         db.execute('INSERT INTO emails VALUES (?)', (data['user'] + '@' + data['domain'],))
@@ -64,7 +65,7 @@ class MailBackend:
             value = json.loads(lines[-1])
         except ValueError:
             raise PanelError('رد CyberPanel غير صالح.')
-        if action == 'list':
+        if action in ('list', 'inventory'):
             if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
                 raise PanelError('قائمة البريد غير صالحة.')
         elif not isinstance(value, dict) or value.get('ok') is not True:
@@ -178,12 +179,28 @@ def create_app(overrides=None):
         disk = shutil.disk_usage('/')
         return jsonify(mode=app.config['MODE'], domains=app.config['DOMAINS'],
                        disk={'total': disk.total, 'used': disk.used, 'free': disk.free},
-                       policies=[{'id': k, 'label': v[0]} for k, v in cleanup.POLICIES.items()])
+                       policies=[{'id': 'all', 'label': 'تنظيف شامل: اللوجات المؤرشفة وكاش الحزم'}] +
+                                [{'id': k, 'label': v[0]} for k, v in cleanup.POLICIES.items()])
 
     @app.get('/api/emails')
     def emails():
         domain = domain_value(request.args.get('domain'))
         return jsonify(emails=backend.call('list', domain=domain))
+
+    @app.get('/api/retention')
+    def retention_status():
+        if app.config['MODE'] == 'demo':
+            return jsonify(mode='demo', accounts=[], pending=[], monitoring='not_verified')
+        accounts = []
+        for email in backend.call('inventory'):
+            try:
+                marker = retention.read_login(email)
+                accounts.append({'email': email, 'first_login': marker['first_login'] if marker else None,
+                                 'expires_at': marker['first_login'] + retention.TTL if marker else None})
+            except (OSError, ValueError):
+                accounts.append({'email': email, 'error': 'تعذر قراءة سجل أول دخول؛ لن يُحذف تلقائيًا.'})
+        return jsonify(mode='cyberpanel', accounts=accounts, pending=retention.pending_jobs(),
+                       monitoring='not_verified')
 
     @app.post('/api/emails/create')
     def create_email():
@@ -195,7 +212,15 @@ def create_app(overrides=None):
         if not isinstance(password, str) or not 12 <= len(password) <= 128 or '\x00' in password:
             raise ValueError('كلمة مرور البريد يجب أن تكون من 12 إلى 128 حرفًا.')
         with mutation_lock:
-            backend.call('create', domain=domain, user=user, password=password)
+            if app.config['MODE'] == 'cyberpanel':
+                with retention.operation_lock():
+                    if retention.job_path(user + '@' + domain).exists():
+                        raise PanelError('هناك حذف غير مكتمل لهذا العنوان. راجع الخدمة قبل إعادة إنشاء الحساب.')
+                    if os.path.lexists(retention.mailbox(user + '@' + domain)):
+                        raise PanelError('هناك مجلد بريد موجود بهذا العنوان. راجعه قبل إنشاء حساب قد يرث بيانات قديمة.')
+                    backend.call('create', domain=domain, user=user, password=password)
+            else:
+                backend.call('create', domain=domain, user=user, password=password)
             if user + '@' + domain not in backend.call('list', domain=domain):
                 raise PanelError('لم يتم التأكد من إنشاء الحساب. حدّث القائمة قبل المحاولة مجددًا.')
         app.logger.warning('Email created: %s@%s', user, domain)
@@ -213,7 +238,14 @@ def create_app(overrides=None):
         with mutation_lock:
             if email not in backend.call('list', domain=domain):
                 raise ValueError('الحساب غير موجود. حدّث القائمة.')
-            backend.call('delete', email=email)
+            if app.config['MODE'] == 'cyberpanel':
+                try:
+                    with retention.operation_lock():
+                        retention.purge_mailbox(backend, email)
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    raise PanelError('الحذف غير مكتمل وقد أُزيل الحساب بالفعل. تم حفظ العملية لإعادة المحاولة؛ راجع قائمة الحذف المعلق وخدمة Dovecot.')
+            else:
+                backend.call('delete', email=email)
             if email in backend.call('list', domain=domain):
                 raise PanelError('لم يتم التأكد من حذف الحساب. حدّث القائمة.')
         app.logger.warning('Email deleted: %s', email)
@@ -224,10 +256,10 @@ def create_app(overrides=None):
         if app.config['MODE'] == 'demo':
             raise ValueError('تنظيف السيرفر متاح في الوضع الفعلي فقط؛ الوضع التجريبي لا يحذف ملفات.')
         category = request.json.get('category')
-        if category not in cleanup.POLICIES:
+        if not isinstance(category, str) or (category != 'all' and category not in cleanup.POLICIES):
             raise ValueError('فئة تنظيف غير صالحة.')
         try:
-            result = cleanup.preview(category)
+            result = cleanup.preview_all() if category == 'all' else cleanup.preview(category)
         except PermissionError:
             raise PanelError('الخدمة لا تملك صلاحية قراءة هذا المسار.')
         token = secrets.token_urlsafe(24)
@@ -250,7 +282,8 @@ def create_app(overrides=None):
             raise ValueError('اعمل معاينة جديدة واكتب «حذف» للتأكيد.')
         try:
             with mutation_lock:
-                result = cleanup.execute(plan['category'], plan['files'])
+                result = (cleanup.execute_all(plan['files']) if plan['category'] == 'all'
+                          else cleanup.execute(plan['category'], plan['files']))
         except OSError:
             raise PanelError('تعذر فتح مسار التنظيف. اعمل معاينة جديدة وراجع الصلاحيات.')
         app.logger.warning('Cleanup category=%s deleted=%s skipped=%s',

@@ -1,0 +1,15 @@
+# EXAMPLE ONLY. Inspect `doveconf -h libexec_dir` and existing postlogin hooks first.
+# Ubuntu commonly uses /usr/lib/dovecot/script-login; verify before installation.
+# Do not overwrite existing postlogin hooks; chain them with administrator review.
+service imap {
+  executable = imap mail-panel-postlogin
+}
+service pop3 {
+  executable = pop3 mail-panel-postlogin
+}
+service mail-panel-postlogin {
+  executable = script-login /opt/mail-panel/record_login.py
+  user = vmail
+  unix_listener mail-panel-postlogin {
+  }
+}

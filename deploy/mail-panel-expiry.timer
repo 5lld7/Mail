@@ -1,0 +1,11 @@
+[Unit]
+Description=Check expired mailboxes every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+Unit=mail-panel-expiry.service
+
+[Install]
+WantedBy=timers.target

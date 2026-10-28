@@ -20,7 +20,7 @@
         <section class="card metric"><span>المساحة المتاحة</span><strong id="disk-free">—</strong><small>على قرص النظام</small></section>
         <section class="card metric"><span>حسابات البريد</span><strong id="email-count">—</strong><small>على الدومين المحدد</small></section>
       </div>
-      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="cleanup-tab">◈ تنظيف المساحة</button></nav>
+      <nav aria-label="أقسام البانل"><button id="mail-tab" class="active">✉ حسابات البريد</button><button id="cleanup-tab">◈ تنظيف المساحة</button><button id="retention-tab">◷ الحذف بعد 24 ساعة</button></nav>
       <section id="mail-section" class="card">
         <div class="section-head"><div><h2>حسابات البريد</h2><p>أنشئ حساب جديد أو احذف حساب لم تعد تحتاجه.</p></div><label>الدومين<select id="domain"></select></label></div>
         <form id="create-form" class="create-grid"><label>اسم الحساب<input id="email-user" placeholder="support" dir="ltr" maxlength="64" required pattern="[a-z0-9][a-z0-9._+\-]{0,63}" autocomplete="off"></label><label>كلمة مرور البريد<input id="email-password" type="password" minlength="12" maxlength="128" placeholder="12 حرف على الأقل" autocomplete="new-password" required></label><button class="primary">+ إنشاء حساب</button></form>
@@ -31,6 +31,14 @@
         <div class="cleanup-controls"><label>نوع الملفات<select id="category"></select></label><button id="preview" class="primary">معاينة الملفات</button></div>
         <p class="muted">تُفحص الملفات مباشرة داخل المجلد فقط، بحد أقصى 1000 ملف لكل معاينة. قد تختلف المساحة الفعلية المتاحة بعد الحذف إذا كانت الملفات مفتوحة بواسطة خدمة.</p>
         <div id="preview-result" hidden><h3 id="preview-summary"></h3><ul id="preview-files" class="file-list"></ul><button id="execute" class="danger">حذف الملفات المعروضة</button></div>
+      </section>
+      <section id="retention-section" class="card" hidden>
+        <h2>حسابات مؤقتة، من أول دخول.</h2>
+        <p>يشمل جميع حسابات CyberPanel على كل الدومينات، القديمة والجديدة. يبدأ العد من أول دخول ناجح عبر IMAP أو POP3 يرصدُه مراقب الدخول بعد تركيبه. فتح صفحة تسجيل الدخول وحده لا يبدأ العد، والدخول المتكرر لا يمدد المدة.</p>
+        <p>بعد 24 ساعة تُحذف بيانات الحساب ومجلد رسائله نهائيًا. الفحص كل دقيقة أثناء عمل الخدمة؛ عند توقف السيرفر أو فشل العملية قد يتأخر الحذف. لا يشمل ذلك محو النسخ الاحتياطية أو السجلات أو نسخ مزود الاستضافة.</p>
+        <p class="muted">ظهور الحسابات هنا لا يثبت أن المراقبة أو المؤقت يعملان. لازم اختبار دخول فعلي والتحقق من systemd على السيرفر قبل الاعتماد عليه. الحساب دون سجل دخول يظل في انتظار أول دخول مرصود؛ لا نفترض تاريخ استخدامه السابق.</p>
+        <button id="retention-refresh">تحديث حالة الحسابات</button>
+        <div id="retention-list" aria-live="polite"></div>
       </section>
     </div>
     <footer>بريد · إدارة خفيفة، ومساحة للحاجات المهمة.</footer>

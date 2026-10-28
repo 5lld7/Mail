@@ -1,0 +1,12 @@
+[Unit]
+Description=Expire mailboxes 24 hours after first observed successful login
+After=dovecot.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/mail-panel
+EnvironmentFile=/etc/mail-panel.env
+ExecStart=/opt/mail-panel/.venv/bin/python /opt/mail-panel/expiry_worker.py --apply
+UMask=0077
+TimeoutStartSec=15min

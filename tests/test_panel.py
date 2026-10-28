@@ -60,6 +60,41 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(self.post('cleanup/preview', {'category': 'system'}).status_code, 400)
         self.assertEqual(self.post('cleanup/execute', {'confirmation': 'حذف'}).status_code, 400)
 
+    def test_retention_requires_login_and_demo_is_explicit(self):
+        self.assertEqual(self.client.get('/api/retention').status_code, 401)
+        self.login()
+        result = self.client.get('/api/retention').json
+        self.assertEqual(result['mode'], 'demo')
+        self.assertEqual(result['monitoring'], 'not_verified')
+        self.assertEqual(result['accounts'], [])
+
+    def test_combined_cleanup_preserves_files_not_in_preview(self):
+        self.login()
+        self.app.config['MODE'] = 'cyberpanel'
+        first = Path(self.temp.name, 'logs')
+        second = Path(self.temp.name, 'cache')
+        first.mkdir()
+        second.mkdir()
+        old = first / 'access.log.1'
+        cache = second / 'package.deb'
+        active = first / 'access.log'
+        for path in (old, cache, active):
+            path.write_text('content')
+            os.utime(path, (time.time() - 20 * 86400,) * 2)
+        policies = {'testlogs': ('Logs', str(first), 'logs'), 'testcache': ('Cache', str(second), 'apt')}
+        with patch.dict(cleanup.POLICIES, policies, clear=True):
+            plan = self.post('cleanup/preview', {'category': 'all'}).json
+            self.assertEqual(len(plan['files']), 2)
+            added = first / 'new.log.1'
+            added.write_text('keep')
+            os.utime(added, (time.time() - 20 * 86400,) * 2)
+            result = self.post('cleanup/execute', {'token': plan['token'], 'confirmation': 'حذف'})
+            self.assertEqual(result.json['deleted'], 2)
+            self.assertTrue(active.exists())
+            self.assertTrue(added.exists())
+            self.assertFalse(old.exists())
+            self.assertFalse(cache.exists())
+
     def test_rate_limit(self):
         for _ in range(5):
             self.assertEqual(self.post('login', {'password': 'wrong'}).status_code, 401)

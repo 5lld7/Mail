@@ -56,6 +56,8 @@ def main():
                 page.locator('#cleanup-tab').click()
                 page.locator('#preview').click()
                 expect(page.locator('#notice')).to_contain_text('تنظيف السيرفر متاح')
+                page.locator('#retention-tab').click()
+                expect(page.locator('#retention-list')).to_contain_text('لا توجد مراقبة دخول')
                 page.set_viewport_size({'width': 390, 'height': 844})
                 page.screenshot(path='/tmp/mail-panel-mobile.png', full_page=True)
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile horizontal overflow'

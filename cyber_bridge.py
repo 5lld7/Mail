@@ -13,8 +13,12 @@ def main():
     from plogical.mailUtilities import mailUtilities
 
     action = data['action']
-    if action == 'list':
-        result = [item.email for item in mailUtilities.getEmailAccounts(data['domain'])]
+    if action == 'inventory':
+        from mailServer.models import EUsers
+        result = list(EUsers.objects.order_by('email').values_list('email', flat=True))
+    elif action == 'list':
+        from mailServer.models import EUsers
+        result = list(EUsers.objects.filter(emailOwner_id=data['domain']).order_by('email').values_list('email', flat=True))
     elif action == 'create':
         status = mailUtilities.createEmailAccount(data['domain'], data['user'], data['password'])
         result = {'ok': status[0] == 1}

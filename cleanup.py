@@ -12,6 +12,32 @@ POLICIES = {
 MIN_AGE = 14 * 86400
 
 
+def preview_all():
+    files = []
+    available = False
+    for category, (_, path, _) in POLICIES.items():
+        result = preview(category)
+        available = available or result['available']
+        files.extend(dict(item, category=category, directory=path) for item in result['files'])
+    return {'label': 'تنظيف شامل للوجات المؤرشفة وكاش الحزم', 'files': files,
+            'bytes': sum(item['bytes'] for item in files), 'available': available}
+
+
+def execute_all(files):
+    totals = {'deleted': 0, 'skipped': 0, 'bytes': 0}
+    for category in POLICIES:
+        selected = [item for item in files if item['category'] == category]
+        if not selected:
+            continue
+        try:
+            result = execute(category, selected)
+        except (OSError, ValueError):
+            result = {'deleted': 0, 'skipped': len(selected), 'bytes': 0}
+        for key in totals:
+            totals[key] += result[key]
+    return totals
+
+
 def directory(path):
     # No symlink components, including the directory itself.
     if str(Path(path).resolve()) != path:
