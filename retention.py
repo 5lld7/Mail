@@ -198,7 +198,11 @@ def purge_mailbox(backend, email, expected_token=None):
         commands.insert(0, ['auth', 'cache', 'flush', email])
     for args in commands:
         result = subprocess.run([doveadm, *args], capture_output=True, text=True, timeout=30, check=False)
-        if result.returncode != 0:
+        # doveadm kick uses EX_NOUSER (68) when there are no matching
+        # sessions. There is then nothing to disconnect; cache failures
+        # and all other kick failures must still preserve mailbox data.
+        no_sessions = args[0] == 'kick' and result.returncode == 68
+        if result.returncode != 0 and not no_sessions:
             raise ValueError('Dovecot session/cache cleanup failed; mailbox data retained for retry')
     if email in backend.call('list', domain=domain):
         raise ValueError('Mailbox was recreated during purge; deletion paused')

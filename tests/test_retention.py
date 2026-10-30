@@ -138,6 +138,34 @@ class RetentionTests(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual(retention.pending_jobs(), [])
 
+    def test_kick_without_sessions_completes_pending_purge(self):
+        path = self.account(age=90000)
+        backend = Backend('user@example.com')
+        with patch('retention.subprocess.run', side_effect=[
+                subprocess.CompletedProcess([], 0, '0', ''),
+                subprocess.CompletedProcess([], 1, '', '')]):
+            self.assertFalse(run(backend, apply=True))
+        self.assertTrue(path.exists())
+        with patch('retention.subprocess.run', side_effect=[
+                subprocess.CompletedProcess([], 0, '0', ''),
+                subprocess.CompletedProcess([], 68, 'no users kicked\n', '')]):
+            with retention.operation_lock():
+                retention.purge_mailbox(backend, 'user@example.com')
+        self.assertFalse(path.exists())
+        self.assertEqual(retention.pending_jobs(), [])
+
+    def test_cache_flush_no_user_is_still_a_failure(self):
+        path = self.account(age=90000)
+        backend = Backend('user@example.com')
+        with patch('retention.subprocess.run', side_effect=[
+                subprocess.CompletedProcess([], 0, '1M', ''),
+                subprocess.CompletedProcess([], 68, '', 'cache failure')]):
+            with retention.operation_lock():
+                with self.assertRaisesRegex(ValueError, 'session/cache cleanup failed'):
+                    retention.purge_mailbox(backend, 'user@example.com')
+        self.assertTrue(path.exists())
+        self.assertEqual(retention.pending_jobs(), ['user@example.com'])
+
     def test_recreated_account_not_removed_by_pending_job(self):
         path = self.account(age=90000)
         backend = Backend('user@example.com')
